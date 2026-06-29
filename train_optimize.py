@@ -1,13 +1,14 @@
 """
-train_optimize.py  -  C2 / C3 / C5 study  (with V)
---------------------------------------------------
-Features (10): T, P1, P2, RM1, RM2, X, M2, M3, YM23, V
-  - V is a settable knob at discrete levels {8,16,24,32,40} (multiples of 8).
-    It improves C2 (LOOCV R^2 0.58->0.60, importance rank 3) and correlates
-    strongly with C5 (-0.67), so it helps the minimize-C5 goal. NOTE: low-V
-    levels are under-sampled (1-2 runs each) -> directional evidence there.
-  - Y_RM12_a (=RM1/RM2) and M1 (constant) dropped. YM23 kept (combined M2/M3).
-Settable knobs: T,P1,P2,RM1,RM2,X (continuous) + V (5 levels) + (M2,M3) recipe.
+train_optimize.py  -  C2 / C3 / C5 study
+----------------------------------------
+Model features (8): T, P1, P2, RM1, RM2, X, YM23, V
+  - YM23 is a function of M2 and M3 (the stoichiometric mole-fraction). It is the
+    strongest predictor of C2; raw M2/M3 alone predict poorly, and including all
+    three is redundant. So YM23 is the model feature.
+  - M2 and M3 remain the SETTABLE knobs: the operator sets them, YM23 is computed
+    from them. (Formula kept internal; not surfaced in the UI.)
+  - V is a settable knob at levels {8,16,24,32,40}. Y_RM12_a and M1 dropped.
+Settable knobs: T,P1,P2,RM1,RM2,X,M2,M3 (continuous) + V (5 levels).
 Targets: maximize C2 ; minimize C3, C5.
 Run:  python train_optimize.py
 """
@@ -22,10 +23,15 @@ from sklearn.model_selection import LeaveOneOut
 from sklearn.metrics import r2_score, mean_absolute_error
 
 RAW_CSV, CLEAN_CSV, PKL = "_My_Task_-_Sheet1__1_.csv", "cleaned_data.csv", "models.pkl"
-MODEL_COLS = ["T", "P1", "P2", "RM1", "RM2", "X", "M2", "M3", "YM23", "V"]
-KNOBS_CONT = ["T", "P1", "P2", "RM1", "RM2", "X"]
-V_LEVELS = [8, 16, 24, 32, 40]                 # multiples of 8, 8..40
+MODEL_COLS = ["T", "P1", "P2", "RM1", "RM2", "X", "YM23", "V"]
+KNOBS_CONT = ["T", "P1", "P2", "RM1", "RM2", "X", "M2", "M3"]   # M2,M3 set YM23
+V_LEVELS = [8, 16, 24, 32, 40]
+K_YM23 = 0.1836                      # internal: YM23 = 100*M2/(M2 + K*M3)
 TARGETS = ["C2", "C3", "C5"]
+
+
+def ym23_from(m2, m3):
+    return 100.0 * m2 / (m2 + K_YM23 * m3)
 
 
 def _to_num(s):
@@ -41,8 +47,9 @@ def load_and_clean(path=RAW_CSV):
                    "C1", "C2", "C3", "C4", "C5", "C6", "Y1", "Y2", "Y1Y2"]
     for c in raw.columns:
         raw[c] = _to_num(raw[c])
-    raw["V"] = raw["V"].ffill()                 # V only on trial-start rows
-    tidy = raw[MODEL_COLS + TARGETS].dropna().reset_index(drop=True)
+    raw["V"] = raw["V"].ffill()
+    keep = MODEL_COLS + ["M2", "M3"] + TARGETS
+    tidy = raw[keep].dropna().reset_index(drop=True)
     tidy.to_csv(CLEAN_CSV, index=False)
     print(f"[clean] {len(tidy)} rows -> {CLEAN_CSV}")
     return tidy
@@ -71,30 +78,29 @@ def main():
     m_c3 = mk_lin().fit(X, d.C3.values)
     m_c5 = mk_lin().fit(X, d.C5.values)
 
-    recipes = (d.groupby(["M2", "M3"])["YM23"].mean().reset_index()
-               .round({"YM23": 2}).values.tolist())
+    # bounds for every settable knob (incl. M2, M3 ranges for the UI/optimizer)
     bc = {c: [float(d[c].min()), float(d[c].max())] for c in KNOBS_CONT}
 
+    # optimizer: vary 8 continuous knobs + V; compute YM23 from M2,M3
     rng = np.random.default_rng(0); N = 300_000
     cont = {c: rng.uniform(*bc[c], size=N) for c in KNOBS_CONT}
-    ridx = rng.integers(0, len(recipes), size=N)
-    M2 = np.array([recipes[i][0] for i in ridx]); M3 = np.array([recipes[i][1] for i in ridx])
-    YM23 = np.array([recipes[i][2] for i in ridx])
+    YM23 = ym23_from(cont["M2"], cont["M3"])
     Vv = np.array(V_LEVELS)[rng.integers(0, len(V_LEVELS), size=N)]
     feat = np.column_stack([cont["T"], cont["P1"], cont["P2"], cont["RM1"],
-                            cont["RM2"], cont["X"], M2, M3, YM23, Vv])
+                            cont["RM2"], cont["X"], YM23, Vv])
     pc2 = m_c2.predict(feat); bi = int(pc2.argmax())
-    opt = {c: float(v) for c, v in zip(MODEL_COLS, feat[bi])}
+    opt = {c: float(cont[c][bi]) for c in KNOBS_CONT}
+    opt["YM23"] = float(YM23[bi]); opt["V"] = float(Vv[bi])
     print(f"[opt] model-predicted best C2={pc2[bi]:.2f}% (synthetic)")
 
     rec = d[d.C5 <= 2].sort_values("C2", ascending=False).iloc[0]
-    rec_inputs = {c: float(rec[c]) for c in MODEL_COLS}
+    rec_inputs = {c: float(rec[c]) for c in MODEL_COLS + ["M2", "M3"]}
     rec_meas = {t: float(rec[t]) for t in TARGETS}
-    print(f"[rec] real run C2={rec_meas['C2']:.1f}% C3={rec_meas['C3']:.1f}% C5={rec_meas['C5']:.2f}% V={rec_inputs['V']:.0f}")
+    print(f"[rec] real run C2={rec_meas['C2']:.1f}% C3={rec_meas['C3']:.1f}% C5={rec_meas['C5']:.2f}%")
 
     joblib.dump({
         "model_cols": MODEL_COLS, "knobs_cont": KNOBS_CONT, "v_levels": V_LEVELS,
-        "bounds_cont": bc, "recipes": recipes,
+        "k_ym23": K_YM23, "bounds_cont": bc,
         "model_C2": m_c2, "model_C3": m_c3, "model_C5": m_c5,
         "loocv": {k: [float(v[0]), float(v[1])] for k, v in cv.items()},
         "opt_pred_inputs": opt, "opt_pred_c2": float(pc2[bi]),
