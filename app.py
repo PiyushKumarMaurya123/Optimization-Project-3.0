@@ -14,14 +14,22 @@ st.set_page_config(page_title="C2 / C3 / C5 Optimizer", page_icon="🧪", layout
 PKL = "models.pkl"
 
 
+REQUIRED_KEYS = {"model_cols", "knobs_cont", "v_levels", "k_ym23", "bounds_cont",
+                 "model_C2", "model_C3", "model_C5", "loocv", "importances_C2",
+                 "opt_pred_inputs", "opt_pred_c2", "rec_inputs", "rec_meas"}
+
+
 @st.cache_resource(show_spinner="Loading models…")
 def load():
     import joblib
     if os.path.exists(PKL):
         try:
-            return joblib.load(PKL)
+            b = joblib.load(PKL)
+            if REQUIRED_KEYS.issubset(b.keys()):   # ignore a stale/old bundle
+                return b
         except Exception:
             pass
+    # Missing, unreadable, or out-of-date bundle -> rebuild from the raw CSV.
     import train_optimize as t
     t.main()
     return joblib.load(PKL)
@@ -32,7 +40,7 @@ COLS = b["model_cols"]                       # T,P1,P2,RM1,RM2,X,YM23,V
 CONT = b["knobs_cont"]                        # T,P1,P2,RM1,RM2,X,M2,M3
 BC = b["bounds_cont"]
 VLEV = b["v_levels"]
-K = b["k_ym23"]
+K = b.get("k_ym23", 0.1836)
 rec, rec_meas = b["rec_inputs"], b["rec_meas"]
 opt, opt_c2 = b["opt_pred_inputs"], b["opt_pred_c2"]
 loocv, imp = b["loocv"], b["importances_C2"]
