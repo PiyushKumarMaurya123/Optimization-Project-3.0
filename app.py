@@ -89,7 +89,7 @@ with t1:
     st.bar_chart(pd.Series(imp).reindex(COLS).sort_values(), horizontal=True)
 
 with t2:
-    st.subheader("Adjust the knobs → live predictions")
+    st.subheader("Adjust the knobs: live predictions")
     st.caption("C2 reliable; C3 & C5 directional. YM23 is a function of M2 and M3 (auto-computed).")
     ca, cb = st.columns(2)
     vals = {}
