@@ -36,4 +36,4 @@ streamlit run app.py
 - Model optimum does not beat the best real run; beating ~71% needs new experiments.
 
 ## Validation (LOOCV, n=36)
-C2 R² ≈ 0.62 (reliable) · C3 R² ≈ 0.23 · C5 R² ≈ 0.16 (directional).
+C2 R² ≈ 0.60 (reliable, Extra Trees) · C3 R² ≈ 0.23 · C5 R² ≈ 0.16 (directional).

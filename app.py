@@ -81,9 +81,9 @@ with t1:
 
     st.divider()
     st.markdown(
-        f"**Model's predicted optimum (synthetic):** C2 ≈ **{opt_c2:.1f}%** — does *not* beat "
-        f"the best real run ({rec_meas['C2']:.1f}%). Optimization re-identifies your best "
-        "existing condition; beating it needs new experiments.")
+        f"**Optimum search:** best predicted C2 ≈ **{opt_c2:.1f}%**, found *at* your best "
+        f"existing run ({rec_meas['C2']:.1f}% measured). The optimizer re-identifies that "
+        "condition rather than finding a new one — beating it needs new experiments.")
 
     st.subheader("What drives C2 (feature importance)")
     st.bar_chart(pd.Series(imp).reindex(COLS).sort_values(), horizontal=True)

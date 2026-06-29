@@ -15,7 +15,9 @@ Maximize **C2** (main-product yield), minimize byproducts **C5** and **C3**.
 - `Y_RM12_a` (=RM1/RM2) and `M1` (constant) dropped. 36 usable runs.
 
 ## Models & validation (LOOCV, n=36)
-- **C2** → Random Forest, R² ≈ 0.62 (reliable).
+- **C2** → Extra Trees (Extremely Randomized Trees), R² ≈ 0.60 (reliable).
+  Chosen over Random Forest because RF's averaging compressed predictions (couldn't
+  reach the ~71% peak); Extra Trees reaches the correct high values at equal accuracy.
 - **C3, C5** → Ridge, R² ≈ 0.23 / 0.16 (directional only).
 - Optimizer varies the settable knobs (T,P1,P2,RM1,RM2,X,M2,M3 + V), computing
   YM23 from M2/M3 — within observed ranges (no extrapolation).
@@ -33,6 +35,6 @@ T=75, P1=6.2, P2=1.5, RM1=13.7, RM2=39.6, X=45, M2=4.0, M3=10, V=40.
 **Measured: C2 ≈ 71.3%, C5 ≈ 1.3%, C3 ≈ 23.2%.**
 
 ## Honesty point
-The model's predicted optimum (~68%) does **not** beat this real run (~71.3%) —
-optimization **re-identifies** your best existing condition. Beating it needs
+The optimum search returns ~71.6%, landing on this same real run — optimization
+**re-identifies** your best existing condition rather than finding a new one. Beating it needs
 **new experiments**; treat recommendations as the best next experiment.

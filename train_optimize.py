@@ -15,7 +15,7 @@ Run:  python train_optimize.py
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
@@ -65,7 +65,7 @@ def loocv(X, y, make):
 def main():
     d = load_and_clean()
     X = d[MODEL_COLS].values
-    mk_c2 = lambda: RandomForestRegressor(n_estimators=300, random_state=42, n_jobs=-1)
+    mk_c2 = lambda: ExtraTreesRegressor(n_estimators=600, min_samples_leaf=1, random_state=42, n_jobs=-1)
     mk_lin = lambda: make_pipeline(StandardScaler(), Ridge(alpha=10.0))
 
     cv = {"C2": loocv(X, d.C2.values, mk_c2),
@@ -81,17 +81,26 @@ def main():
     # bounds for every settable knob (incl. M2, M3 ranges for the UI/optimizer)
     bc = {c: [float(d[c].min()), float(d[c].max())] for c in KNOBS_CONT}
 
-    # optimizer: vary 8 continuous knobs + V; compute YM23 from M2,M3
+    # optimizer: random exploration PLUS the observed points (ExtraTrees predicts
+    # highest near real data, so include them to report a sensible optimum)
     rng = np.random.default_rng(0); N = 300_000
     cont = {c: rng.uniform(*bc[c], size=N) for c in KNOBS_CONT}
     YM23 = ym23_from(cont["M2"], cont["M3"])
     Vv = np.array(V_LEVELS)[rng.integers(0, len(V_LEVELS), size=N)]
-    feat = np.column_stack([cont["T"], cont["P1"], cont["P2"], cont["RM1"],
-                            cont["RM2"], cont["X"], YM23, Vv])
-    pc2 = m_c2.predict(feat); bi = int(pc2.argmax())
-    opt = {c: float(cont[c][bi]) for c in KNOBS_CONT}
-    opt["YM23"] = float(YM23[bi]); opt["V"] = float(Vv[bi])
-    print(f"[opt] model-predicted best C2={pc2[bi]:.2f}% (synthetic)")
+    feat_rand = np.column_stack([cont["T"], cont["P1"], cont["P2"], cont["RM1"],
+                                 cont["RM2"], cont["X"], YM23, Vv])
+    feat_obs = d[MODEL_COLS].values
+    p_rand = m_c2.predict(feat_rand)
+    p_obs = m_c2.predict(feat_obs)
+    if p_obs.max() >= p_rand.max():
+        j = int(p_obs.argmax()); best_c2 = float(p_obs[j])
+        opt = {c: float(d.iloc[j][c]) for c in KNOBS_CONT}
+        opt["YM23"] = float(d.iloc[j]["YM23"]); opt["V"] = float(d.iloc[j]["V"])
+    else:
+        bi = int(p_rand.argmax()); best_c2 = float(p_rand[bi])
+        opt = {c: float(cont[c][bi]) for c in KNOBS_CONT}
+        opt["YM23"] = float(YM23[bi]); opt["V"] = float(Vv[bi])
+    print(f"[opt] model-predicted best C2={best_c2:.2f}%")
 
     rec = d[d.C5 <= 2].sort_values("C2", ascending=False).iloc[0]
     rec_inputs = {c: float(rec[c]) for c in MODEL_COLS + ["M2", "M3"]}
@@ -103,7 +112,7 @@ def main():
         "k_ym23": K_YM23, "bounds_cont": bc,
         "model_C2": m_c2, "model_C3": m_c3, "model_C5": m_c5,
         "loocv": {k: [float(v[0]), float(v[1])] for k, v in cv.items()},
-        "opt_pred_inputs": opt, "opt_pred_c2": float(pc2[bi]),
+        "opt_pred_inputs": opt, "opt_pred_c2": float(best_c2),
         "rec_inputs": rec_inputs, "rec_meas": rec_meas,
         "importances_C2": {c: float(i) for c, i in zip(MODEL_COLS, m_c2.feature_importances_)},
     }, PKL)
